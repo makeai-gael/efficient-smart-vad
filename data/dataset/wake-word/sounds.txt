@@ -1,0 +1,1 @@
+All wake word sounds can be placed in this folder

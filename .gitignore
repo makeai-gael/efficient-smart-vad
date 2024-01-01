@@ -1,0 +1,15 @@
+# Audio Files
+*.mp3
+*.wav
+*.flac
+*.aac
+*.ogg
+*.wma
+*.m4a
+*.aiff
+*.ra
+*.mid
+*.midi
+__pycache__/
+*.pyc
+.vscode
