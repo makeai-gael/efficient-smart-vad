@@ -18,10 +18,9 @@ def change_pitch(samples, sample_rate=8000):
     y_pitch = samples.copy()
     bins_per_octave = 12
     pitch_pm = 2
-    pitch_change =  pitch_pm * 2*(np.random.uniform())   
-    #print("pitch_change = ",pitch_change)
+    pitch_change =  pitch_pm * 2*(np.random.uniform())
     y_pitch = effects.pitch_shift(y_pitch.astype('float64'), 
-                                          sample_rate, n_steps=pitch_change, 
+                                          sr=sample_rate, n_steps=pitch_change, 
                                           bins_per_octave=bins_per_octave)
     return y_pitch
 
@@ -29,7 +28,7 @@ def change_speed(samples, sample_rate=8000):
     # handle both increase and decrease randomly
     y_speed = samples.copy()
     speed_change = np.random.uniform(low=0.9,high=1.1)
-    tmp = effects.time_stretch(y_speed.astype('float64'), speed_change)
+    tmp = effects.time_stretch(y_speed.astype('float64'), rate=speed_change)
     minlen = min(y_speed.shape[0], tmp.shape[0])
     y_speed *= 0 
     y_speed[0:minlen] = tmp[0:minlen]
@@ -64,7 +63,7 @@ def change_shift(samples, sample_rate=8000):
 def change_streching(samples, sample_rate=8000):
     input_length = len(samples)
     streching = samples.copy()
-    streching = effects.time_stretch(streching.astype('float'), 1.1)
+    streching = effects.time_stretch(streching.astype('float'), rate=1.1)
     if len(streching) > input_length:
         streching = streching[:input_length]
     else:
@@ -176,4 +175,24 @@ class audio_filters:
             wav_neg[pos_space:l1 + pos_space] += wav_p
             out = wav_neg
         return out
-        
+    
+    def test_all_filters(self, sample_rate=8000, duration = 1, frequency = 440):
+        # generate a one second audio
+        # Generate time values
+        t = np.linspace(0, duration, int(sample_rate * duration), endpoint=False)
+        # Generate the sine wave
+        wav = np.sin(2 * np.pi * frequency * t)
+        # pass it through all filters
+        print("simple filters checking...")
+        for fnc in self.functions:
+            w = fnc(wav, sample_rate)
+        print("simple filters checked!")
+        print("advanced filters checking...")
+        for fnc in self.cell_effect_functions:
+            w = fnc(wav, sample_rate)
+        print("advanced filters checked!")
+        return
+    
+if __name__=="__main__":
+    main = audio_filters()
+    main.test_all_filters()

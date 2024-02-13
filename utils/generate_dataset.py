@@ -55,14 +55,14 @@ class dataset_generator:
         train_len = int(len(data)*self.train_test_ratio)
         train_data, test_data = data[:train_len], data[train_len:]
         # generating audio files
-        folder_dst_train = f"{data_src}sounds/train/wake-word"
-        folder_dst_test = f"{data_src}sounds/val/wake-word"
+        folder_dst_train = f"{data_src}sounds/train/wake_word/"
+        folder_dst_test = f"{data_src}sounds/val/wake_word/"
         os.makedirs(os.path.dirname(folder_dst_train), exist_ok=True)
         os.makedirs(os.path.dirname(folder_dst_test), exist_ok=True)
         # storing train audio
         count = 1
         for wav in tqdm(train_data, desc="storing wake train audio:"):
-            dst = f"{folder_dst_train}{count}.wav"
+            dst = f"{folder_dst_train}audio{count}.wav"
             try:
                 soundfile.write(dst, wav, self.sample_rate)
                 count += 1
@@ -71,7 +71,7 @@ class dataset_generator:
         # storing validation audio
         count = 1
         for wav in tqdm(test_data, desc="storing wake val audio:"):
-            dst = f"{folder_dst_test}{count}.wav"
+            dst = f"{folder_dst_test}audio{count}.wav"
             try:
                 soundfile.write(dst, wav, self.sample_rate)
                 count += 1
@@ -98,14 +98,14 @@ class dataset_generator:
         train_len = int(len(data)*self.train_test_ratio)
         train_data, test_data = data[:train_len], data[train_len:]
         # generating audio files
-        folder_dst_train = f"{data_src}sounds/train/ambient-sounds"
-        folder_dst_test = f"{data_src}sounds/val/ambient-sounds"
+        folder_dst_train = f"{data_src}sounds/train/ambient_sound/"
+        folder_dst_test = f"{data_src}sounds/val/ambient_sound/"
         os.makedirs(os.path.dirname(folder_dst_train), exist_ok=True)
         os.makedirs(os.path.dirname(folder_dst_test), exist_ok=True)
         # storing train audio
         count = 1
         for wav in tqdm(train_data, desc="storing ambient train audio:"):
-            dst = f"{folder_dst_train}{count}.wav"
+            dst = f"{folder_dst_train}audio{count}.wav"
             try:
                 soundfile.write(dst, wav, self.sample_rate)
                 count += 1
@@ -114,7 +114,7 @@ class dataset_generator:
         # storing validation audio
         count = 1
         for wav in tqdm(test_data, desc="storing ambient val audio:"):
-            dst = f"{folder_dst_test}{count}.wav"
+            dst = f"{folder_dst_test}audio{count}.wav"
             try:
                 soundfile.write(dst, wav, self.sample_rate)
                 count += 1
@@ -126,11 +126,11 @@ class dataset_generator:
     def check_dataset_presence(self):
         try:
             # ambient sounds
-            train_set = len([x for x in os.listdir(f"{data_src}sounds/train/ambient-sounds") if x.endswith('.wav')])
-            val_set = len([x for x in os.listdir(f"{data_src}sounds/val/ambient-sounds") if x.endswith('.wav')])
+            train_set = len([x for x in os.listdir(f"{data_src}sounds/train/ambient_sound/") if x.endswith('.wav')])
+            val_set = len([x for x in os.listdir(f"{data_src}sounds/val/ambient_sound/") if x.endswith('.wav')])
             # wake word
-            train_set_ = len([x for x in os.listdir(f"{data_src}sounds/train/wake-word") if x.endswith('.wav')])
-            val_set_ = len([x for x in os.listdir(f"{data_src}sounds/val/wake-word") if x.endswith('.wav')])
+            train_set_ = len([x for x in os.listdir(f"{data_src}sounds/train/wake_word/") if x.endswith('.wav')])
+            val_set_ = len([x for x in os.listdir(f"{data_src}sounds/val/wake_word/") if x.endswith('.wav')])
             print(f"Dataset checked, train: {train_set_}/{train_set}, val: {val_set_}/{val_set}")
             if train_set+train_set_>200 and val_set+val_set_>40:
                 return True
@@ -151,7 +151,7 @@ class dataset_generator:
                     status = self.Convertor.media_convertor(file_src, file_dst, sample_rate=self.sample_rate)
                     file_src = file_dst if status else ""
                 wav = self.load_audio(file_src)
-                if wav:
+                if type(wav)!=bool:
                     audios.append(wav)
                 
         # Delete the directory

@@ -7,6 +7,21 @@ from tensorflow.keras import layers
 from tensorflow.keras.callbacks import ModelCheckpoint
 import numpy as np
 
+def decode_audio(audio_binary):
+    audio, _ = tf.audio.decode_wav(audio_binary)
+    return tf.squeeze(audio, axis=-1)
+
+def get_label(file_path):
+    parts = tf.strings.split(file_path, os.path.sep)
+    # Note: You'll need to adjust the index depending on your dataset's directory structure
+    return parts[-2]
+
+def process_path(file_path):
+    label = get_label(file_path)
+    audio_binary = tf.io.read_file(file_path)
+    audio = decode_audio(audio_binary)
+    return audio, label
+
 
 class train():
     # constant
@@ -18,6 +33,7 @@ class train():
                 "learning_rate":1e-3,
                 "cnn_dropout":0.2,
                 "num_classes": 2,
+                "dataset_path": "data/dataset/sounds/",
                 "model_path": "data/model/vad_v1/vad_v1.h5"}
     sample_rate = 8000 # 8khz
     audio_length = 1 # 1 second
@@ -97,8 +113,16 @@ class train():
             os._exit(0)
             
         # all is good load dataset
+        train_dataset = tf.data.Dataset.list_files(str(f"{self.settings['dataset_path']}/train/*/*.wav"), shuffle=True)
+        train_dataset = train_dataset.map(process_path, num_parallel_calls=tf.data.AUTOTUNE)
+
+        val_dataset = tf.data.Dataset.list_files(str(f"{self.settings['dataset_path']}/val/*/*.wav"), shuffle=False)
+        val_dataset = val_dataset.map(process_path, num_parallel_calls=tf.data.AUTOTUNE)
+        AUTOTUNE = tf.data.AUTOTUNE
+        train_dataset = train_dataset.batch(self.settings['batchsize']).prefetch(AUTOTUNE)
+        val_dataset = val_dataset.batch(self.settings['batchsize']).prefetch(AUTOTUNE)
         # TBD
-        return None, None, None
+        return train_dataset, val_dataset, val_dataset
         
     def process_audio(self, src:str):
         wave, sr = librosa.load(src, mono=True, sr=self.sample_rate)
