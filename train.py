@@ -77,7 +77,7 @@ class train():
         # saving
         if save_flag:
             self.model.save(self.settings["model_path"])
-            self.convert_to_tflite()
+        self.convert_to_tflite()
         return
     
     def begin_fiting(self):
@@ -146,27 +146,23 @@ class train():
         return conv
     
     def mfcc_block(self, input_layer):
-        # Define the parameters for the STFT, Mel spectrogram, and MFCC
-        sample_rate = 8000
-        num_mel_bins = 40
-        num_spectrogram_bins = 257  # This value depends on your STFT configuration
-        lower_edge_hertz = 20
-        upper_edge_hertz = 4000
-        mfcc_features = 26
-
         # Compute the STFT of the audio
-        stft_layer = Lambda(lambda x: tf.abs(tf.signal.stft(x, frame_length=400, frame_step=160, fft_length=512)))(input_layer)
+        stft = tf.abs(tf.signal.stft(input_layer, frame_length=400, frame_step=160, fft_length=512))
         
         # Compute Mel spectrogram
+        num_spectrogram_bins = stft.shape[-1]
         linear_to_mel_weight_matrix = tf.signal.linear_to_mel_weight_matrix(
-            num_mel_bins, num_spectrogram_bins, sample_rate, lower_edge_hertz, upper_edge_hertz)
-        mel_spectrogram_layer = Lambda(lambda x: tf.tensordot(x, linear_to_mel_weight_matrix, 1))(stft_layer)
-        mel_spectrogram_layer = Lambda(lambda x: tf.math.log(x + 1e-6))(mel_spectrogram_layer)
+            40, num_spectrogram_bins, 8000, 20, 4000)
+        mel_spectrogram = tf.tensordot(stft, linear_to_mel_weight_matrix, 1)
+        mel_spectrogram.set_shape(stft.shape[:-1].concatenate(linear_to_mel_weight_matrix.shape[-1:]))
+        
+        # Compute log Mel spectrogram
+        log_mel_spectrogram = tf.math.log(mel_spectrogram + 1e-6)
         
         # Compute MFCCs from log Mel spectrograms
-        mfcc_layer = Lambda(lambda x: tf.signal.mfccs_from_log_mel_spectrograms(x)[..., :mfcc_features])(mel_spectrogram_layer)
+        mfccs = tf.signal.mfccs_from_log_mel_spectrograms(log_mel_spectrogram)[..., :26]
 
-        return mfcc_layer
+        return mfccs
     
     def load_dataset(self):
         # check or generate dataset
