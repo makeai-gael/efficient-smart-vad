@@ -106,8 +106,19 @@ class train():
     def convert_to_tflite(self):
         # Load the trained TensorFlow model
         model = tf.keras.models.load_model(self.settings["model_path"])
+        
         # Initialize the TFLite converter
         converter = tf.lite.TFLiteConverter.from_keras_model(model)
+        
+        # Enable TensorFlow operations in TFLite (TF Select)
+        converter.target_spec.supported_ops = [
+            tf.lite.OpsSet.TFLITE_BUILTINS,  # Enable TensorFlow Lite ops.
+            tf.lite.OpsSet.SELECT_TF_OPS  # Enable TensorFlow ops.
+        ]
+
+        # Optionally, apply optimizations
+        converter.optimizations = [tf.lite.Optimize.DEFAULT]
+
         # Convert the model
         tflite_model = converter.convert()
 
@@ -116,7 +127,6 @@ class train():
             f.write(tflite_model)
         
         print(f"Model successfully converted to TFLite format and saved to {self.settings['tf-lite_path']}")
-        return
 
     
     def model_v1(self):
