@@ -1,9 +1,7 @@
 from utils.generate_dataset import dataset_generator
-import os, time, sys, librosa
+import os
 os.environ["TF_CPP_MIN_LOG_LEVEL"] = "2"
 import  tensorflow as tf
-from tensorflow import keras
-from tensorflow.keras import layers
 from tensorflow.keras.layers import Conv1D, Dropout, Activation, Flatten, Dense, Input
 from tensorflow.keras.models import Model
 from tensorflow.keras.callbacks import ModelCheckpoint
@@ -74,7 +72,8 @@ class train():
                 "cnn_dropout":0.2,
                 "num_classes": 2,
                 "dataset_path": "data/dataset/sounds/",
-                "model_path": "data/models/vad_v1.h5"}
+                "model_path": "data/models/vad_v1.h5",
+                "tf-lite_path": "data/models/vad_v1.tflite"}
     sample_rate = 8000 # 8khz
     audio_length = 1 # 1 second
     val_flag = True
@@ -100,6 +99,7 @@ class train():
         # saving
         if save_flag:
             self.model.save(self.settings["model_path"])
+            self.convert_to_tflite()
         return
     
     def begin_fiting(self):
@@ -124,6 +124,27 @@ class train():
             # fit only
             self.model.fit(self.data_train,epochs=self.settings["epochs"], verbose=2)
         return
+    
+    def convert_to_tflite(self):
+        # Load the trained TensorFlow model
+        model = tf.keras.models.load_model(self.settings["model_path"])
+
+        # Initialize the TFLite converter
+        converter = tf.lite.TFLiteConverter.from_keras_model(model)
+
+        # (Optional) Set the optimization strategy for the converter if needed
+        # converter.optimizations = [tf.lite.Optimize.DEFAULT]
+
+        # Convert the model
+        tflite_model = converter.convert()
+
+        # Save the converted TFLite model to the specified path
+        with open(self.settings["tf-lite_path"], 'wb') as f:
+            f.write(tflite_model)
+        
+        print(f"Model successfully converted to TFLite format and saved to {self.settings['tf-lite_path']}")
+        return
+
     
     def model_v1(self):
         # Define the input layer
