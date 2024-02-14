@@ -2,7 +2,7 @@ from utils.generate_dataset import dataset_generator
 import os
 os.environ["TF_CPP_MIN_LOG_LEVEL"] = "2"
 import  tensorflow as tf
-from tensorflow.keras.layers import Conv1D, Dropout, Activation, Flatten, Dense, Input
+from tensorflow.keras.layers import Conv1D, Dropout, Activation, Flatten, Dense, Input, Lambda
 from tensorflow.keras.models import Model
 from tensorflow.keras.callbacks import ModelCheckpoint
 import numpy as np
@@ -16,50 +16,28 @@ def get_label(file_path):
     # Note: You'll need to adjust the index depending on your dataset's directory structure
     return parts[-2]
 
+# Define a mapping from class names (strings) to integers
+keys = tf.constant(['ambient_sound', 'wake_word'])  # Adjust based on your actual class names
+values = tf.constant([0, 1], dtype=tf.int64)
+table = tf.lookup.StaticHashTable(tf.lookup.KeyValueTensorInitializer(keys, values), default_value=-1)
+
 def process_path(file_path):
     label = get_label(file_path)
+    label_id = table.lookup(label)  # Assuming you've implemented the label lookup as suggested
     audio_binary = tf.io.read_file(file_path)
-    audio = decode_audio(audio_binary)
-    return audio, label
-
-class BasicMFCC(tf.keras.layers.Layer):
-    def __init__(self, sample_rate=8000, mfcc_features=26, **kwargs):
-        super().__init__(**kwargs)
-        self.sample_rate = sample_rate
-        self.mfcc_features = mfcc_features
-        # Define the parameters for the STFT, Mel spectrogram, and MFCC
-        self.frame_length = 0.025  # Window length for the STFT (25 ms)
-        self.frame_step = 0.010    # Frame step for the STFT (10 ms)
-        self.mel_bins = 40         # Number of Mel bins
-        self.lower_edge_hertz = 20 # Lower bound of frequency
-        self.upper_edge_hertz = 4000 # Upper bound of frequency, can adjust based on Nyquist theorem and your application
-
-    def call(self, inputs):
-        # Ensure the input waveform is properly shaped and has the correct dtype
-        waveforms = tf.cast(inputs, tf.float32)
-
-        # Compute the STFT of the audio
-        stfts = tf.signal.stft(waveforms, 
-                               frame_length=int(self.sample_rate * self.frame_length), 
-                               frame_step=int(self.sample_rate * self.frame_step), 
-                               fft_length=int(self.sample_rate * self.frame_length))
-        spectrograms = tf.abs(stfts)
-
-        # Compute Mel spectrogram
-        num_spectrogram_bins = stfts.shape[-1]
-        linear_to_mel_weight_matrix = tf.signal.linear_to_mel_weight_matrix(
-            self.mel_bins, num_spectrogram_bins, self.sample_rate, 
-            self.lower_edge_hertz, self.upper_edge_hertz)
-        mel_spectrograms = tf.tensordot(spectrograms, linear_to_mel_weight_matrix, 1)
-        mel_spectrograms.set_shape(spectrograms.shape[:-1].concatenate(linear_to_mel_weight_matrix.shape[-1:]))
-
-        # Compute log Mel spectrogram
-        log_mel_spectrograms = tf.math.log(mel_spectrograms + 1e-6)
-
-        # Compute MFCCs from log Mel spectrograms
-        mfccs = tf.signal.mfccs_from_log_mel_spectrograms(log_mel_spectrograms)[..., :self.mfcc_features]
-
-        return mfccs
+    audio, _ = tf.audio.decode_wav(audio_binary)
+    audio = tf.squeeze(audio, axis=-1)
+    
+    # Ensure audio length is 8000 samples (for 1 second at 8kHz)
+    # Pad with zeros if shorter, trim if longer
+    desired_length = 8000
+    audio_length = tf.shape(audio)[0]
+    
+    audio = tf.cond(audio_length < desired_length,
+                    lambda: tf.pad(audio, [[0, desired_length - audio_length]], constant_values=0),
+                    lambda: audio[:desired_length])
+    
+    return audio, label_id
 
 class train():
     # constant
@@ -128,13 +106,8 @@ class train():
     def convert_to_tflite(self):
         # Load the trained TensorFlow model
         model = tf.keras.models.load_model(self.settings["model_path"])
-
         # Initialize the TFLite converter
         converter = tf.lite.TFLiteConverter.from_keras_model(model)
-
-        # (Optional) Set the optimization strategy for the converter if needed
-        # converter.optimizations = [tf.lite.Optimize.DEFAULT]
-
         # Convert the model
         tflite_model = converter.convert()
 
@@ -150,7 +123,7 @@ class train():
         # Define the input layer
         input_layer = Input(shape=(8000,))
         # Add the custom MFCC layer
-        mfcc_layer = BasicMFCC()(input_layer)
+        mfcc_layer = self.mfcc_block(input_layer)
         # Conv1D Block 1
         x = self.conv1d_block(mfcc_layer, 32, 16)
         # Conv1D Block 2
@@ -171,6 +144,29 @@ class train():
         conv = Dropout(self.settings['cnn_dropout'])(conv)
         conv = Activation('relu')(conv)
         return conv
+    
+    def mfcc_block(self, input_layer):
+        # Define the parameters for the STFT, Mel spectrogram, and MFCC
+        sample_rate = 8000
+        num_mel_bins = 40
+        num_spectrogram_bins = 257  # This value depends on your STFT configuration
+        lower_edge_hertz = 20
+        upper_edge_hertz = 4000
+        mfcc_features = 26
+
+        # Compute the STFT of the audio
+        stft_layer = Lambda(lambda x: tf.abs(tf.signal.stft(x, frame_length=400, frame_step=160, fft_length=512)))(input_layer)
+        
+        # Compute Mel spectrogram
+        linear_to_mel_weight_matrix = tf.signal.linear_to_mel_weight_matrix(
+            num_mel_bins, num_spectrogram_bins, sample_rate, lower_edge_hertz, upper_edge_hertz)
+        mel_spectrogram_layer = Lambda(lambda x: tf.tensordot(x, linear_to_mel_weight_matrix, 1))(stft_layer)
+        mel_spectrogram_layer = Lambda(lambda x: tf.math.log(x + 1e-6))(mel_spectrogram_layer)
+        
+        # Compute MFCCs from log Mel spectrograms
+        mfcc_layer = Lambda(lambda x: tf.signal.mfccs_from_log_mel_spectrograms(x)[..., :mfcc_features])(mel_spectrogram_layer)
+
+        return mfcc_layer
     
     def load_dataset(self):
         # check or generate dataset
