@@ -4,6 +4,8 @@ os.environ["TF_CPP_MIN_LOG_LEVEL"] = "2"
 import  tensorflow as tf
 from tensorflow import keras
 from tensorflow.keras import layers
+from tensorflow.keras.layers import Conv1D, Dropout, Activation, Flatten, Dense, Input
+from tensorflow.keras.models import Model
 from tensorflow.keras.callbacks import ModelCheckpoint
 import numpy as np
 
@@ -22,6 +24,44 @@ def process_path(file_path):
     audio = decode_audio(audio_binary)
     return audio, label
 
+class BasicMFCC(tf.keras.layers.Layer):
+    def __init__(self, sample_rate=8000, mfcc_features=26, **kwargs):
+        super().__init__(**kwargs)
+        self.sample_rate = sample_rate
+        self.mfcc_features = mfcc_features
+        # Define the parameters for the STFT, Mel spectrogram, and MFCC
+        self.frame_length = 0.025  # Window length for the STFT (25 ms)
+        self.frame_step = 0.010    # Frame step for the STFT (10 ms)
+        self.mel_bins = 40         # Number of Mel bins
+        self.lower_edge_hertz = 20 # Lower bound of frequency
+        self.upper_edge_hertz = 4000 # Upper bound of frequency, can adjust based on Nyquist theorem and your application
+
+    def call(self, inputs):
+        # Ensure the input waveform is properly shaped and has the correct dtype
+        waveforms = tf.cast(inputs, tf.float32)
+
+        # Compute the STFT of the audio
+        stfts = tf.signal.stft(waveforms, 
+                               frame_length=int(self.sample_rate * self.frame_length), 
+                               frame_step=int(self.sample_rate * self.frame_step), 
+                               fft_length=int(self.sample_rate * self.frame_length))
+        spectrograms = tf.abs(stfts)
+
+        # Compute Mel spectrogram
+        num_spectrogram_bins = stfts.shape[-1]
+        linear_to_mel_weight_matrix = tf.signal.linear_to_mel_weight_matrix(
+            self.mel_bins, num_spectrogram_bins, self.sample_rate, 
+            self.lower_edge_hertz, self.upper_edge_hertz)
+        mel_spectrograms = tf.tensordot(spectrograms, linear_to_mel_weight_matrix, 1)
+        mel_spectrograms.set_shape(spectrograms.shape[:-1].concatenate(linear_to_mel_weight_matrix.shape[-1:]))
+
+        # Compute log Mel spectrogram
+        log_mel_spectrograms = tf.math.log(mel_spectrograms + 1e-6)
+
+        # Compute MFCCs from log Mel spectrograms
+        mfccs = tf.signal.mfccs_from_log_mel_spectrograms(log_mel_spectrograms)[..., :self.mfcc_features]
+
+        return mfccs
 
 class train():
     # constant
@@ -34,7 +74,7 @@ class train():
                 "cnn_dropout":0.2,
                 "num_classes": 2,
                 "dataset_path": "data/dataset/sounds/",
-                "model_path": "data/model/vad_v1/vad_v1.h5"}
+                "model_path": "data/models/vad_v1.h5"}
     sample_rate = 8000 # 8khz
     audio_length = 1 # 1 second
     val_flag = True
@@ -46,20 +86,15 @@ class train():
     def begin_training(self, flag=True, save_flag=False):
         # load data
         self.data_train, self.data_val, self.data_test = self.load_dataset()
-        exit(0)
-        if self.data_val=="": self.val_flag=False
-        if self.data_test=="": self.test_flag=False
-
+        # exit(0)
         # model architecture
         self.model = self.model_v1()
         # summary
         if flag: self.model.summary()
         # compile model
-        self.model.compile(
-                    loss= keras.losses.CategoricalCrossentropy(),
-                    optimizer=keras.optimizers.Adam(lr=self.settings["learning_rate"]),
-                    metrics=["accuracy"]
-                    )
+        self.model.compile(optimizer='adam', 
+                           loss='sparse_categorical_crossentropy', 
+                           metrics=['accuracy'])
         # train the model
         self.begin_fiting()
         # saving
@@ -89,16 +124,32 @@ class train():
             # fit only
             self.model.fit(self.data_train,epochs=self.settings["epochs"], verbose=2)
         return
-
+    
     def model_v1(self):
-        Input = keras.Input(shape=(51, 26), dtype=tf.float32)
-
-        # ... TBD
-        x = Input
-
-        output = layers.Softmax()(x)
-        model = keras.Model(inputs=Input, outputs=output)
+        # Define the input layer
+        input_layer = Input(shape=(8000,))
+        # Add the custom MFCC layer
+        mfcc_layer = BasicMFCC()(input_layer)
+        # Conv1D Block 1
+        x = self.conv1d_block(mfcc_layer, 32, 16)
+        # Conv1D Block 2
+        x = self.conv1d_block(x, 32, 16)
+        # Conv1D Block 3
+        x = self.conv1d_block(x, 32, 16)
+        # Flatten the output of the last Conv1D block
+        x = Flatten()(x)
+        # Add the output layer with softmax activation for binary classification
+        output_layer = Dense(2, activation='softmax')(x)
+        # Create the model
+        model = Model(inputs=input_layer, outputs=output_layer)
         return model
+        
+    def conv1d_block(self, prev_layer, filters, kernel_size):
+        # Conv1D Block
+        conv = Conv1D(filters=filters, kernel_size=kernel_size, strides=2, padding='same')(prev_layer)
+        conv = Dropout(self.settings['cnn_dropout'])(conv)
+        conv = Activation('relu')(conv)
+        return conv
     
     def load_dataset(self):
         # check or generate dataset
@@ -121,24 +172,7 @@ class train():
         AUTOTUNE = tf.data.AUTOTUNE
         train_dataset = train_dataset.batch(self.settings['batchsize']).prefetch(AUTOTUNE)
         val_dataset = val_dataset.batch(self.settings['batchsize']).prefetch(AUTOTUNE)
-        # TBD
         return train_dataset, val_dataset, val_dataset
-        
-    def process_audio(self, src:str):
-        wave, sr = librosa.load(src, mono=True, sr=self.sample_rate)
-        strip_h = 26
-        window_width = int(0.025*sr) # 25ms
-        stride = int(0.020*sr)  #20ms
-        mfcc = librosa.feature.mfcc(y=wave, sr=sr, n_mfcc=strip_h, hop_length=stride, n_fft=window_width)
-        # reduce mfcc values close to 1
-        mfcc = (mfcc - np.mean(mfcc))/np.std(mfcc)
-
-        # reshape to proper 3D
-        mfcc = np.reshape(mfcc,[26,-1])
-        mfcc = np.transpose(mfcc,[1,0])
-        return mfcc
-
-
 
 if __name__ == "__main__":
     main = train()
