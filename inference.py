@@ -1,8 +1,11 @@
 from os import environ
-environ["TF_CPP_MIN_LOG_LEVEL"] = "2"
+environ["TF_CPP_MIN_LOG_LEVEL"] = "3"
+import warnings
+warnings.filterwarnings('ignore')
 from tensorflow.keras.models import load_model
 import numpy as np
 from pyaudio import paInt16, PyAudio
+import time
 
 class stream_processor():
     # constant
@@ -47,7 +50,8 @@ class vad_inference():
         "swidth": 2
     }
     Labels = {1:'key_word', 0:'noise'}
-
+    DT = 0
+    dt_count = 0
     def __init__(self):
         self.initiate()
 
@@ -73,20 +77,25 @@ class vad_inference():
             # clip the list to the last one second for frame of 1
             prev_process = prev_process[-int(self.settings["sample_rate"]*pred_time_frame):]
             pred = self.run_inference(prev_process)[0]
+            self.dt_count += 1
             if pred == 'key_word':
                 key_count += 1
             elif pred == 'noise':
                 space_count += 1
-            if space_count == 3:
+            if space_count == 2:
                 key_count = 0
                 space_count = 0
-            elif key_count == 5:
-                return 'key_word'
+            elif key_count == 7:
+                return 'key_word', f"dt: {self.DT*1000/self.dt_count}"
 
     
     def run_inference(self, data):
+        t = time.time()
         input_data = self.process_stream.batch_signal(data, self.settings["sample_rate"])
-        output = self.model.predict(x=input_data)
+        output = self.model.predict(x=input_data, verbose=0)
+        dt = time.time() - t
+        self.DT += dt
+        # self.dt_count += 1
         #print(output)
         prediction = self.process_output_prediction(output)
         return prediction
@@ -110,7 +119,8 @@ class vad_inference():
 
 if __name__ == "__main__":
     main = vad_inference()
+    print("ready to listen...")
     while True:
-        word = main.listen()
+        word, dt = main.listen()
         if word == 'key_word':
-            print('Key_word detected...')
+            print(f'Key_word detected=> {dt}')
