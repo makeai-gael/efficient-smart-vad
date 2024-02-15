@@ -3,6 +3,7 @@ environ["TF_CPP_MIN_LOG_LEVEL"] = "3"
 import warnings
 warnings.filterwarnings('ignore')
 from tensorflow.keras.models import load_model
+import tensorflow as tf
 import numpy as np
 from pyaudio import paInt16, PyAudio
 import time
@@ -43,6 +44,7 @@ class vad_inference():
     # constants
     settings = {
         "model_path": "data/models/vad_v1.h5",
+        "model_tf-lite_path": "data/models/vad_v1.tflite",
         "sample_rate": 8000,
         "chunk": 1024,
         "format": paInt16,
@@ -60,6 +62,14 @@ class vad_inference():
         self.init_stream()
         # load model
         self.model = load_model(self.settings["model_path"])
+        # load tf-model
+        # Load TFLite model and allocate tensors
+        self.interpreter = tf.lite.Interpreter(model_path=self.settings["model_tf-lite_path"])
+        self.interpreter.allocate_tensors()
+
+        # Get input and output details
+        self.input_details = self.interpreter.get_input_details()
+        self.output_details = self.interpreter.get_output_details()
         # load stream processor
         self.process_stream = stream_processor()
         return
