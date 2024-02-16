@@ -61,7 +61,7 @@ class vad_inference():
         # stream
         self.init_stream()
         # load model
-        self.model = load_model(self.settings["model_path"])
+        # self.model = load_model(self.settings["model_path"])
         # load tf-model
         # Load TFLite model and allocate tensors
         self.interpreter = tf.lite.Interpreter(model_path=self.settings["model_tf-lite_path"])
@@ -97,16 +97,41 @@ class vad_inference():
                 space_count = 0
             elif key_count == 7:
                 return 'key_word', f"dt: {self.DT*1000/self.dt_count}"
+            
+    def predict_wav_tflite(self, wav_data):
+        """
+        Takes processed WAV data as input, runs inference on a TFLite model, and returns the output.
+
+        Parameters:
+        - wav_data: A numpy array of shape [batch_size, 8000] containing the preprocessed WAV file samples.
+
+        Returns:
+        - The output of the model as a numpy array.
+        """
+        # Ensure wav_data is correctly shaped as (1, 8000) and matches the model's input dtype
+        wav_data = np.array(wav_data, dtype=self.input_details[0]['dtype'])
+        
+        # Set the input tensor
+        self.interpreter.set_tensor(self.input_details[0]['index'], wav_data)
+        
+        # Run the model
+        self.interpreter.invoke()
+        
+        # Get the output
+        output_data = self.interpreter.get_tensor(self.output_details[0]['index'])
+        
+        return output_data
 
     
     def run_inference(self, data):
         t = time.time()
         input_data = self.process_stream.batch_signal(data, self.settings["sample_rate"])
-        output = self.model.predict(x=input_data, verbose=0)
+        # output = self.model.predict(x=input_data, verbose=0)
+        output = self.predict_wav_tflite(input_data)
         dt = time.time() - t
         self.DT += dt
-        # self.dt_count += 1
-        #print(output)
+        print(output)
+        exit(0)
         prediction = self.process_output_prediction(output)
         return prediction
     def process_output_prediction(self, output):
